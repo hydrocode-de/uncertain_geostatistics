@@ -1,0 +1,2 @@
+streamlit>=1.0.0
+skgstat_uncertainty>=1.0.0
