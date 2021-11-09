@@ -83,7 +83,7 @@ def reset():
     raise st.script_runner.RerunException(st.script_request_queue.RerunData(None))
 
 
-def coookie_consent():
+def coookie_consent(mng: stx.CookieManager):
     st.title('Consent')
     user_id = ''.join(choice(ascii_letters) for _ in range(24))
     st.markdown(CONSENT_TEXT.format(user_id=user_id))
@@ -112,7 +112,7 @@ def coookie_consent():
             'can_upload': accept and base_data == 'plain'
         }
 
-        mng = stx.CookieManager()
+        # mng = stx.CookieManager()
         mng.set('skg_opts', json.dumps(info), expires_at=dt.now() + td(days=14 if accept else 1))
         st.session_state.skg_opts = info
         with st.spinner('saving'):
@@ -156,7 +156,7 @@ def handle_session() -> str:
             return all_cookies['skg_opts']
         else:
             # handle consent
-            coookie_consent()
+            coookie_consent(mng)
 
     else:
         # return the options
@@ -180,7 +180,8 @@ def main_app():
     api = API(**opts)
 
     # check if cleanup already ran in this session
-    if not st.session_state.did_cleanup:
+    did_cleanup = st.session_state.get('did_cleanup', False)
+    if not did_cleanup:
         # create a thread for cleanup
         thread = threading.Thread(target=cleanup_files, args=api)
         thread.start()
