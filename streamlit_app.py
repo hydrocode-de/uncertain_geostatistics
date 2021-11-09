@@ -50,8 +50,27 @@ WELCOME = """
 This application is built on top of SciKit-GStat and GSTools. You can use prepared data-samples or 
 upload your own data to propagate uncertainties into variogram estimations and then fit various 
 models to the confidence interval of the uncertain experimental variogram. The last chapter gives
-you the opportunity to evaluate uncertainties resulting from the procedure.
+you the opportunity to evaluate uncertainties resulting from this procedure.
 """
+
+ATTRIBUTIONS = [
+    {
+        "md": "### SciKit-GStat\nThe core package used for estimating variograms. Cite this always.",
+        "attribution": "Mälicke, M.: SciKit-GStat 1.0: A SciPy flavoured geostatistical variogram estimation toolbox written in Python, Geosci. Model Dev. Discuss. [preprint], https://doi.org/10.5194/gmd-2021-174, in review, 2021."
+    },
+    {
+        "md": "### GSTools\nPowerful geostatistical libary, used to perform Kriging. Cite this always.",
+        "attribution": "Müller, S., Schüler, L., Zech, A., and Heße, F.: GSTools v1.3: A toolbox for geostatistical modelling in Python, Geosci. Model Dev. Discuss. [preprint], https://doi.org/10.5194/gmd-2021-301, in review, 2021."
+    },
+    {
+        "md": "### Plotly\nNext generation plotting library - used for all plots. You need to cite this in case you use screenshots or downloads",
+        "attribution": "Plotly Technologies Inc.: Collaborative data science. URL: https://plot.ly, Plotly Technologies Inc. Montréal, QC, Canada, 2015."
+    },
+    {
+        "md": "### SciPy\nLibrary used for scientific and technical computing",
+        "attribution": "Virtanen, P., Gommers, R., Oliphant, T. E., Haberland, M., Reddy, T., Cournapeau, D., … SciPy 1.0 Contributors. (2020). SciPy 1.0: Fundamental Algorithms for Scientific Computing in Python. Nature Methods, 17, 261–272. https://doi.org/10.1038/s41592-019-0686-2"
+    }
+]
 
 
 def navigation(container=st) -> str:
@@ -70,9 +89,22 @@ def navigation(container=st) -> str:
 
 
 def index() -> None:
-    st.title('Index page')
+    st.markdown('### A hydrocode application:')
+    st.title('Uncertain Geostatistics')
     st.markdown(WELCOME)
-    st.json(st.session_state.get('skg_opts'))
+    
+    st.markdown('## Attribution')
+    st.markdown("In case you use anything created by this application, do not forget to cite or attribute the application and all underlying libaries:")
+    attr_expander = st.expander('ATTRIBUTION', expanded=True)
+    for attribution in ATTRIBUTIONS:
+        attr_expander.markdown(attribution.get('md', ''))
+        attr_expander.code(attribution.get('attribution', 'no resource given'))
+    
+    st.markdown('## Your data\nThis application is referencing your database copy using a browser cookie.')
+    st.markdown('If you switch the browser, you will have to start over again. Below you can view and manage the data stored by the application.')
+    
+    data_expander = st.expander('COOKIES', expanded=False)
+    data_expander.json(st.session_state.get('skg_opts'))
     
     st.stop()
 
@@ -183,7 +215,7 @@ def main_app():
     did_cleanup = st.session_state.get('did_cleanup', False)
     if not did_cleanup:
         # create a thread for cleanup
-        thread = threading.Thread(target=cleanup_files, args=api)
+        thread = threading.Thread(target=lambda: cleanup_files(api=api))
         thread.start()
         st.session_state.did_cleanup = True
 
