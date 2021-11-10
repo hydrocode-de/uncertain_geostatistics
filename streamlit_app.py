@@ -7,9 +7,12 @@ import shutil
 import time
 import glob
 import threading
+import inspect
 from random import choice
 from string import ascii_letters
 from datetime import datetime as dt, timedelta as td
+import skgstat as skg
+import gstools as gs
 
 
 # import all chapters
@@ -30,7 +33,8 @@ ALL_CHAPTERS = {
     'variogram': 'Variogram estimation',
     'model': 'Theoretical model fitting',
     'kriging': 'Model application - Kriging',
-    'compare': 'Results - Compare Kriging'
+    'compare': 'Results - Compare Kriging',
+    'code_ref': 'Help - Code Reference'
 }
 
 
@@ -108,6 +112,36 @@ def index() -> None:
     
     st.stop()
 
+
+def code_reference() -> None:
+    st.title('Code reference')
+    st.markdown('Below, you can load the docstring for the relevant functions taken from SciKit-GStat and GSTools')
+
+    funcs = {
+        skg.Variogram.__init__: 'Variogram [SciKit-GStat]',
+        gs.Krige: 'Kriging [GSTools]',
+        skg.Variogram.set_bin_func: 'Variogram binning [SciKit-GStat]',
+        skg.models.spherical: 'Spherical Model [SciKit-GStat]',
+        skg.models.exponential: 'Exponential Model [SciKit-GStat]',
+        skg.models.gaussian: 'Gaussian Model [SciKit-GStat]',
+        skg.models.cubic: 'Cubic Model [SciKit-GStat]',
+        skg.models.stable: 'Stable Model [SciKit-GStat]',
+        skg.models.matern: 'Matérn Model [SciKit-GStat]',
+        skg.estimators.matheron: 'Mathéron estimator [SciKit-GStat]',
+        skg.estimators.cressie: 'Cressie-Hawkins estimator [SciKit-GStat]',
+        skg.estimators.dowd: 'Dowd estimator [SciKit-GStat]',
+        skg.estimators.genton: 'Genton estimator [SciKit-GStat]'
+    }
+
+    func_name = st.selectbox('Function name', options=list(funcs.keys()), format_func=lambda k: funcs.get(k))
+
+    st.markdown(f'## Code documentation')
+    help_expander = st.expander('__doc__', expanded=True)
+    help_expander.help(func_name)
+
+
+
+    
 
 def reset():
     st.session_state.clear()
@@ -235,6 +269,8 @@ def main_app():
             kriging_app(api=api)
         elif page_name == 'compare':
             compare_app(api=api)
+        elif page_name == 'code_ref':
+            code_reference()
     except Exception as e:
         error_exapnder = st.expander('DEBUG', expanded=True)
         error_exapnder.title('Unallowed action')
