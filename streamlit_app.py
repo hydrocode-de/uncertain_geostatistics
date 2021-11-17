@@ -7,12 +7,14 @@ import shutil
 import time
 import glob
 import threading
-import inspect
+import requests
 from random import choice
 from string import ascii_letters
 from datetime import datetime as dt, timedelta as td
 import skgstat as skg
 import gstools as gs
+from google.cloud import firestore
+from google.oauth2.credentials import Credentials
 
 
 # import all chapters
@@ -108,9 +110,29 @@ def index() -> None:
     st.markdown('If you switch the browser, you will have to start over again. Below you can view and manage the data stored by the application.')
     
     data_expander = st.expander('COOKIES', expanded=False)
-    data_expander.json(st.session_state.get('skg_opts'))
+    opts = st.session_state.get('skg_opts', {})
+    data_expander.json(opts)
     
-    st.stop()
+    if len(opts) > 0:
+        r, l, _ = data_expander.columns((1,1,5))
+        del_cookie = r.button('DELETE COOKIE')
+        del_all = l.button('DELETE COOKIE AND DATA')
+
+        if del_cookie or del_all:
+            mng = stx.CookieManager()
+            mng.delete(cookie='skg_opts', key='cookie_delete')
+            del st.session_state['skg_opts']
+            
+            # check if data should be deleted as well
+            if del_all:
+                fname = opts['db_name']
+                path = opts['data_path']
+                os.remove(os.path.join(path, fname))
+            
+            with st.spinner('Deleting cookie...'):
+                
+                time.sleep(0.5)
+                reset()
 
 
 def code_reference() -> None:
@@ -140,9 +162,6 @@ def code_reference() -> None:
     help_expander.help(func_name)
 
 
-
-    
-
 def reset():
     st.session_state.clear()
     st.experimental_rerun()
@@ -160,9 +179,10 @@ def coookie_consent(mng: stx.CookieManager):
      
     base_data = st.selectbox('DATABASE', options=list(BASE_DATA.keys()), format_func=lambda k: BASE_DATA.get(k))
 
-    l, r, _ = st.columns((1,1,8))
+    l, c, r, _ = st.columns((1,1,1,7))
     accept = l.button('ACCEPT')
-    decline = r.button('DECLINE')
+    decline = c.button('DECLINE')
+    login(cookie_manager=mng, key='consent_login', base_data=base_data, container=r)
     
     if accept or decline:
         path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data'))
@@ -175,7 +195,8 @@ def coookie_consent(mng: stx.CookieManager):
             'data_path': path,
             'db_name': f'a_{user_id}.db' if accept else 'shared.db',
             'share': accept,
-            'can_upload': accept and base_data == 'plain'
+            'can_upload': accept and base_data == 'plain',
+            'did_login': False
         }
 
         # mng = stx.CookieManager()
@@ -189,9 +210,96 @@ def coookie_consent(mng: stx.CookieManager):
         st.stop()
 
 
-def login():
-    pass
+def _firebase_login(username: str, password: str):
+    # open config file
+    with open(os.path.join(os.path.dirname(__file__), '.firebase.json'), 'r') as f:
+        CONF = json.load(f)
+    
+    # get the info
+    API_KEY = CONF['APIKEY']
+    SIGNIN_URL = CONF['SIGNINURL'].format(apikey=API_KEY)
+    PROJECT_ID = CONF['PROJECTID']
 
+    # create details for authentication
+    details = dict(
+        email=username,
+        password=password,
+        returnSecureToken=True
+    )
+
+    # send the request
+    response = requests.post(SIGNIN_URL, data=details)
+    data = response.json()
+
+    # check if successful
+    if 'idToken' in data:
+        # create credentials
+        cred = Credentials(data['idToken'], refresh_token=data.get('refreshToken'))
+
+        # connect firestore and load user data
+        db = firestore.Client(credentials=cred, project=PROJECT_ID)
+        ref = db.collection('users').document(data.get('localId')).get()
+
+        return ref.to_dict()
+    else:
+        raise RuntimeError(json.dumps(data))
+
+
+def login(cookie_manager: stx.CookieManager, key='', base_data: str = None, container=st):
+    # add the button
+    if not st.session_state.get('logging_in', False):
+        do_login = container.button('LOGIN', key=f'LOGIN_{key}')
+    else:
+        do_login = False
+
+    # handle login if the user clicked the button
+    if do_login or st.session_state.get('logging_in', False):
+        st.session_state['logging_in'] = True
+
+        with st.form('LOGIN_FORM', clear_on_submit=True):
+            username = st.text_input('Username')
+            password = st.text_input('Password')
+
+            if base_data is None:
+                # load the BASE_DATA
+                with open(os.path.join(os.path.dirname(__file__), 'BASE_DATA.json'), 'r') as f:
+                    BASE_DATA = json.load(f)
+                base_data = st.selectbox('DATABASE', options=list(BASE_DATA.keys()), format_func=lambda k: BASE_DATA.get(k))
+
+            did_submit = st.form_submit_button('SEND')
+
+            if did_submit:
+                # authenticate with firebase
+                try:
+                    user_data = _firebase_login(username, password)
+                except Exception as e:
+                    st.error(str(e))
+                    st.stop()
+                
+                # if not stopped, the authentication was successful
+                path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data'))
+                    
+                # handle the login
+                info = {'data_path': path}
+                info.update(user_data.get('info', {}))
+                
+                # do the saving
+                with st.spinner('saving'):
+                    cookie_manager.set('skg_opts', json.dumps(info), expires_at=dt.now() + td(days=30))    
+                    time.sleep(0.5)
+
+                    # if sqlite copy base data if necessary
+                    if base_data != 'plain' and info.get('db_name', '').endswith('.db'):
+                        if not os.path.exists(os.path.join(path, f'u_{username}.db')):
+                                shutil.copy(os.path.join(path, f'{base_data}.db'), os.path.join(path, f'u_{username}.db'))
+                    
+                    # handle session state
+                    st.session_state.skg_opts = info
+                    st.session_state['did_login'] = True
+                    del st.session_state['logging_in']
+
+                # reset
+                reset()
 
 def cleanup_files(api: API) -> None:
     # get all files
@@ -223,7 +331,10 @@ def handle_session() -> str:
         else:
             # handle consent
             coookie_consent(mng)
-
+    elif not opts.get('did_login', False):
+        mng = stx.CookieManager()
+        login(mng, key='session_handler', container=st.sidebar)
+        return opts
     else:
         # return the options
         return opts    

@@ -1,3 +1,5 @@
 streamlit>=1.0.0
 skgstat_uncertainty>=1.1.1
 extra-streamlit-components
+google-cloud
+google-cloud-firestore
