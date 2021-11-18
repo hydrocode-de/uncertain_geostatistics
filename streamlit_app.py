@@ -119,18 +119,28 @@ def index() -> None:
         del_all = l.button('DELETE COOKIE AND DATA')
 
         if del_cookie or del_all:
+            # check if data should be deleted as well
+            if del_all:
+                fname = opts.get('db_name')
+                if fname is not None and fname.startswith('a_'):
+                    path = opts['data_path']
+                    os.remove(os.path.join(path, fname))
+                elif fname is not None and fname.startwith('u_'):
+                    st.warning('This will delete your personal db on all devices, continue?')
+                    con = st.button('DELETE')
+                    if con:
+                        path = opts['data_path']
+                        os.remove(os.path.join(path, fname))
+                else:
+                    st.warning('Deleting non-file db connections not supported yet.')
+
+            # do the actual cookie deletion
             mng = stx.CookieManager()
             mng.delete(cookie='skg_opts', key='cookie_delete')
             del st.session_state['skg_opts']
             
-            # check if data should be deleted as well
-            if del_all:
-                fname = opts['db_name']
-                path = opts['data_path']
-                os.remove(os.path.join(path, fname))
-            
+
             with st.spinner('Deleting cookie...'):
-                
                 time.sleep(0.5)
                 reset()
 
@@ -210,7 +220,7 @@ def coookie_consent(mng: stx.CookieManager):
         st.stop()
 
 
-def _firebase_login(username: str, password: str):
+def _firebase_login(username: str, password: str, token_only: bool = False):
     # open config file
     with open(os.path.join(os.path.dirname(__file__), '.firebase.json'), 'r') as f:
         CONF = json.load(f)
@@ -230,6 +240,9 @@ def _firebase_login(username: str, password: str):
     # send the request
     response = requests.post(SIGNIN_URL, data=details)
     data = response.json()
+
+    if token_only:
+        return data
 
     # check if successful
     if 'idToken' in data:
