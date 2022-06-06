@@ -5,10 +5,10 @@ LABEL maintainer='Mirko Mälicke'
 
 # build the structure
 RUN mkdir -p /src/data
+RUN mkdir -p /src/config
 
 # copy the sources
 COPY ./streamlit_app.py /src/streamlit_app.py
-COPY ./.firebase.json /src/firebase.json
 COPY ./BASE_DATA.json /src/BASE_DATA.json
 
 # COPY the packaging

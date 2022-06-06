@@ -239,7 +239,7 @@ def coookie_consent(mng: stx.CookieManager):
 
 def _firebase_login(username: str, password: str, token_only: bool = False):
     # open config file
-    with open(os.path.join(os.path.dirname(__file__), '.firebase.json'), 'r') as f:
+    with open(os.path.join(os.path.dirname(__file__),'config', '.firebase.json'), 'r') as f:
         CONF = json.load(f)
     
     # get the info

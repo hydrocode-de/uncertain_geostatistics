@@ -129,3 +129,4 @@ dmypy.json
 .pyre/
 data/a_*.db
 .vscode
+.firebase.json
