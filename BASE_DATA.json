@@ -1,5 +1,6 @@
 {
     "plain": "Empty database",
     "pancake": "Pancake benchmark dataset",
-    "meuse": "Meuse Lead dataset (R-package sp)"
+    "meuse": "Meuse Lead dataset (R-package sp)",
+    "shared_backup": "All datasets"
 }

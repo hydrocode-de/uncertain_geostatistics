@@ -1,6 +1,5 @@
 from typing import Union
 import streamlit as st
-import extra_streamlit_components as stx
 import os
 import json
 import shutil
@@ -11,6 +10,8 @@ import requests
 from random import choice
 from string import ascii_letters
 from datetime import datetime as dt, timedelta as td
+
+import extra_streamlit_components as stx
 import skgstat as skg
 import gstools as gs
 from google.cloud import firestore
@@ -24,6 +25,7 @@ from skgstat_uncertainty.chapters.data_manage import main_app as data_manager, s
 from skgstat_uncertainty.chapters.variogram import main_app as vario_app
 from skgstat_uncertainty.chapters.model_fitting import main_app as fit_app
 from skgstat_uncertainty.chapters.kriging import main_app as kriging_app
+from skgstat_uncertainty.chapters.model_simulation import main_app as simulation_app
 from skgstat_uncertainty.chapters.model_compare import main_app as compare_app
 
 
@@ -35,6 +37,7 @@ ALL_CHAPTERS = {
     'variogram': 'Variogram estimation',
     'model': 'Theoretical model fitting',
     'kriging': 'Model application - Kriging',
+    'simulation': 'Model application - Simulation',
     'compare': 'Results - Compare Kriging',
     'code_ref': 'Help - Code Reference'
 }
@@ -43,7 +46,8 @@ ALL_CHAPTERS = {
 CONSENT_TEXT = """This application stores an randomly generated string into your browsers cookies.
 This enables the application to identify your browser and load the correct data from the database.
 Without this cookie, the application does not work, and you need to leave this website.
-The id generated for you is: `{user_id}`.
+The id generated for you is: `{user_id}`. You can view and delete the cookie at any time from the browser.
+Additionally, the HOME page of this application will expose the stored content transparently.
 
 Furthermore, you can accept or decline the sharing of anonymous usage statistics and the storage of 
 a personalized database connection. This is optional, but allows custom data upload. Otherwise, 
@@ -62,11 +66,11 @@ you the opportunity to evaluate uncertainties resulting from this procedure.
 ATTRIBUTIONS = [
     {
         "md": "### SciKit-GStat\nThe core package used for estimating variograms. Cite this always.",
-        "attribution": "Mälicke, M.: SciKit-GStat 1.0: A SciPy flavoured geostatistical variogram estimation toolbox written in Python, Geosci. Model Dev. Discuss. [preprint], https://doi.org/10.5194/gmd-2021-174, in review, 2021."
+        "attribution": "Mälicke, M.: SciKit-GStat 1.0: a SciPy-flavored geostatistical variogram estimation toolbox written in Python, Geosci. Model Dev., 15, 2505–2532, https://doi.org/10.5194/gmd-15-2505-2022, 2022."
     },
     {
         "md": "### GSTools\nPowerful geostatistical libary, used to perform Kriging. Cite this always.",
-        "attribution": "Müller, S., Schüler, L., Zech, A., and Heße, F.: GSTools v1.3: A toolbox for geostatistical modelling in Python, Geosci. Model Dev. Discuss. [preprint], https://doi.org/10.5194/gmd-2021-301, in review, 2021."
+        "attribution": "Müller, S., Schüler, L., Zech, A., and Heße, F.: GSTools v1.3: a toolbox for geostatistical modelling in Python, Geosci. Model Dev., 15, 3161–3182, https://doi.org/10.5194/gmd-15-3161-2022, 2022."
     },
     {
         "md": "### Plotly\nNext generation plotting library - used for all plots. You need to cite this in case you use screenshots or downloads",
@@ -95,9 +99,13 @@ def navigation(container=st) -> str:
 
 
 def index() -> None:
+    # first off - get the options from cookies
+    opts = st.session_state.get('skg_opts', {})
+
     st.markdown('### A hydrocode application:')
     st.title('Uncertain Geostatistics')
-    st.markdown(WELCOME)
+    subtitle = st.empty()
+    st.markdown(WELCOME)    
     
     st.markdown('## Attribution')
     st.markdown("In case you use anything created by this application, do not forget to cite or attribute the application and all underlying libaries:")
@@ -109,11 +117,16 @@ def index() -> None:
     st.markdown('## Your data\nThis application is referencing your database copy using a browser cookie.')
     st.markdown('If you switch the browser, you will have to start over again. Below you can view and manage the data stored by the application.')
     
-    data_expander = st.expander('COOKIES', expanded=False)
-    opts = st.session_state.get('skg_opts', {})
-    data_expander.json(opts)
+    # build the user-data expander
+    auth_method = opts.get('auth_entitiy', False)
+    if auth_method:
+        subtitle.markdown(f"### Login: {opts.get('name', 'no name')} using {opts['auth_entitiy']}")
     
     if len(opts) > 0:
+        # build the expander
+        data_expander = st.expander('COOKIES', expanded=False)
+        data_expander.json(opts)
+
         r, l, _ = data_expander.columns((1,1,5))
         del_cookie = r.button('DELETE COOKIE')
         del_all = l.button('DELETE COOKIE AND DATA')
@@ -141,7 +154,7 @@ def index() -> None:
             
 
             with st.spinner('Deleting cookie...'):
-                time.sleep(0.5)
+                time.sleep(1.0)
                 reset()
 
 
@@ -152,6 +165,7 @@ def code_reference() -> None:
     funcs = {
         skg.Variogram.__init__: 'Variogram [SciKit-GStat]',
         gs.Krige: 'Kriging [GSTools]',
+        gs.CondSRF: 'Simulation [GSTools]',
         skg.Variogram.set_bin_func: 'Variogram binning [SciKit-GStat]',
         skg.models.spherical: 'Spherical Model [SciKit-GStat]',
         skg.models.exponential: 'Exponential Model [SciKit-GStat]',
@@ -162,7 +176,10 @@ def code_reference() -> None:
         skg.estimators.matheron: 'Mathéron estimator [SciKit-GStat]',
         skg.estimators.cressie: 'Cressie-Hawkins estimator [SciKit-GStat]',
         skg.estimators.dowd: 'Dowd estimator [SciKit-GStat]',
-        skg.estimators.genton: 'Genton estimator [SciKit-GStat]'
+        skg.estimators.genton: 'Genton estimator [SciKit-GStat]',
+        skg.binning.even_width_lags: 'Even width binning [SciKit-GStat]',
+        skg.binning.auto_derived_lags: 'Binning with auto-derived lags [SciKit-GStat]',
+        skg.binning.kmeans: 'KMean binning [SciKit-GStat]',
     }
 
     func_name = st.selectbox('Function name', options=list(funcs.keys()), format_func=lambda k: funcs.get(k))
@@ -175,7 +192,7 @@ def code_reference() -> None:
 def reset():
     st.session_state.clear()
     st.experimental_rerun()
-    raise st.script_runner.RerunException(st.script_request_queue.RerunData(None))
+    # raise st.script_runner.RerunException(st.script_request_queue.RerunData(None))
 
 
 def coookie_consent(mng: stx.CookieManager):
@@ -197,15 +214,15 @@ def coookie_consent(mng: stx.CookieManager):
     if accept or decline:
         path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data'))
         
-        if accept and base_data != 'plain':
+        if accept:
             shutil.copy(os.path.join(path, f'{base_data}.db'), os.path.join(path, f'a_{user_id}.db'))
         
         # set info dict
         info = {
-            'data_path': path,
+            # 'data_path': path,
             'db_name': f'a_{user_id}.db' if accept else 'shared.db',
             'share': accept,
-            'can_upload': accept and base_data == 'plain',
+            'can_upload': accept,
             'did_login': False
         }
 
@@ -269,50 +286,58 @@ def login(cookie_manager: stx.CookieManager, key='', base_data: str = None, cont
     if do_login or st.session_state.get('logging_in', False):
         st.session_state['logging_in'] = True
 
-        with st.form('LOGIN_FORM', clear_on_submit=True):
-            username = st.text_input('Username')
-            password = st.text_input('Password')
+        with st.expander('LOGIN', expanded=True):
+            with st.form('LOGIN_FORM', clear_on_submit=True):
+                username = st.text_input('Username')
+                password = st.text_input('Password')
 
-            if base_data is None:
-                # load the BASE_DATA
-                with open(os.path.join(os.path.dirname(__file__), 'BASE_DATA.json'), 'r') as f:
-                    BASE_DATA = json.load(f)
-                base_data = st.selectbox('DATABASE', options=list(BASE_DATA.keys()), format_func=lambda k: BASE_DATA.get(k))
+                if base_data is None:
+                    # load the BASE_DATA
+                    with open(os.path.join(os.path.dirname(__file__), 'BASE_DATA.json'), 'r') as f:
+                        BASE_DATA = json.load(f)
+                    base_data = st.selectbox('DATABASE', options=list(BASE_DATA.keys()), format_func=lambda k: BASE_DATA.get(k))
 
-            did_submit = st.form_submit_button('SEND')
+                did_submit = st.form_submit_button('SEND')
 
-            if did_submit:
-                # authenticate with firebase
-                try:
-                    user_data = _firebase_login(username, password)
-                except Exception as e:
-                    st.error(str(e))
-                    st.stop()
-                
-                # if not stopped, the authentication was successful
-                path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data'))
+                if did_submit:
+                    # authenticate with firebase
+                    try:
+                        user_data = _firebase_login(username, password)
+                    except Exception as e:
+                        st.error(str(e))
+                        st.stop()
                     
-                # handle the login
-                info = {'data_path': path}
-                info.update(user_data.get('info', {}))
-                
-                # do the saving
-                with st.spinner('saving'):
-                    cookie_manager.set('skg_opts', json.dumps(info), expires_at=dt.now() + td(days=30))    
-                    time.sleep(0.5)
-
-                    # if sqlite copy base data if necessary
-                    if base_data != 'plain' and info.get('db_name', '').endswith('.db'):
-                        if not os.path.exists(os.path.join(path, f'u_{username}.db')):
-                                shutil.copy(os.path.join(path, f'{base_data}.db'), os.path.join(path, f'u_{username}.db'))
+                    # if not stopped, the authentication was successful
+                    path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'data'))
+                        
+                    # handle the login
+                    info = {'data_path': path}
+                    info.update(user_data.get('info', {}))
                     
-                    # handle session state
-                    st.session_state.skg_opts = info
-                    st.session_state['did_login'] = True
-                    del st.session_state['logging_in']
+                    # do the saving
+                    with st.spinner('saving'):
+                        cookie_manager.set('skg_opts', json.dumps(info), expires_at=dt.now() + td(days=30))    
+                        time.sleep(0.5)
 
-                # reset
-                reset()
+                        # if sqlite copy base data if necessary
+                        if base_data != 'plain' and info.get('db_name', '').endswith('.db'):
+                            if not os.path.exists(os.path.join(path, f'u_{username}.db')):
+                                    shutil.copy(os.path.join(path, f'{base_data}.db'), os.path.join(path, f'u_{username}.db'))
+                        
+                        # handle session state
+                        st.session_state.skg_opts = info
+                        st.session_state['did_login'] = True
+                        del st.session_state['logging_in']
+
+                    # reset
+                    reset()
+            
+            # cancel button
+            cancel = st.button('CANCEL')
+            if cancel:
+                del st.session_state['logging_in']
+                st.experimental_rerun()
+
 
 def cleanup_files(api: API) -> None:
     # get all files
@@ -353,17 +378,21 @@ def handle_session() -> str:
         return opts    
     
 
-def main_app():
+def main_app(**kwargs):
     # some page settings
-    st.set_page_config('Uncertainty by hydrocode', layout='wide')
+    st.set_page_config('Uncertainty by hydrocode', layout=kwargs.get('layout', 'wide'))
 
-    #    default_opts = {'data_path': os.path.join(os.path.dirname(__file__), 'data'), 'db_name': f'shared.db', 'share': False}
+    # add the logo
+    st.sidebar.image("https://firebasestorage.googleapis.com/v0/b/hydrocode-website.appspot.com/o/public%2Fhydrocode_brand.png?alt=media")
 
+    # get the session data to identify correct database
     opts = handle_session()
 
-    # create an expander for the navigation
-    # navigation_expander = st.sidebar.expander('NAVIGATION')
-    # page_name = navigation(container=navigation_expander)
+    # fix paths
+    data_path = kwargs.get('data_path', os.path.join(os.path.dirname(__file__), 'data'))
+    opts.update({'data_path': data_path})
+    
+    # add navigation
     page_name = navigation(container=st.sidebar)
 
     # create an API instance
@@ -391,6 +420,8 @@ def main_app():
             fit_app(api=api)
         elif page_name == 'kriging':
             kriging_app(api=api)
+        elif page_name == 'simulation':
+            simulation_app(api=api)
         elif page_name == 'compare':
             compare_app(api=api)
         elif page_name == 'code_ref':
@@ -403,4 +434,5 @@ def main_app():
     
 
 if __name__ == '__main__':
-    main_app()
+    import fire
+    fire.Fire(main_app)
